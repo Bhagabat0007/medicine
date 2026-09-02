@@ -10,86 +10,24 @@ import VoiceButton from '../components/voice/VoiceButton';
 import ListeningIndicator from '../components/voice/ListeningIndicator';
 import RedFlagAlert from '../components/emergency/RedFlagAlert';
 import { useStore } from '../store/useStore';
-import type { Question } from '../types';
-
-const DEMO_QUESTIONS: Question[] = [
-  {
-    question_id: 'chief_complaint',
-    type: 'voice',
-    text: 'What brings you here today?',
-    subtext: 'Tell me in your own words.',
-  },
-  {
-    question_id: 'pain_onset',
-    type: 'single_choice',
-    text: 'When did this start?',
-    options: ['Today', 'Yesterday', 'A few days ago', 'A week ago', 'More than a week ago'],
-  },
-  {
-    question_id: 'pain_location',
-    type: 'single_choice',
-    text: 'Where do you feel it?',
-    options: ['Head', 'Chest', 'Stomach', 'Back', 'Hands or legs', 'Full body'],
-  },
-  {
-    question_id: 'pain_severity',
-    type: 'scale',
-    text: 'How severe is it?',
-    subtext: 'From 0 (no pain) to 10 (worst pain)',
-    min: 0,
-    max: 10,
-    minLabel: 'No pain',
-    maxLabel: 'Worst pain',
-  },
-  {
-    question_id: 'pain_character',
-    type: 'single_choice',
-    text: 'How would you describe it?',
-    options: ['Pressure', 'Burning', 'Sharp', 'Tightness', 'Dull ache', 'Other'],
-  },
-  {
-    question_id: 'associated_symptoms',
-    type: 'multiple_choice',
-    text: 'Any of these along with it?',
-    subtext: 'Select all that apply.',
-    options: ['Fever', 'Breathlessness', 'Nausea', 'Dizziness', 'Sweating', 'None of these'],
-  },
-  {
-    question_id: 'previous_medications',
-    type: 'voice',
-    text: 'Are you taking any medicines right now?',
-    subtext: 'You can say them or type.',
-  },
-  {
-    question_id: 'allergies',
-    type: 'single_choice',
-    text: 'Do you have any allergies?',
-    options: ['No known allergies', 'Yes, to medicines', 'Yes, to food', 'Yes, to other things'],
-  },
-];
-
-const RED_FLAG_COMBOS: string[][] = [
-  ['Chest', 'Breathlessness'],
-  ['Chest', 'Sweating'],
-  ['Head', 'Dizziness'],
-  ['Full body', 'Breathlessness'],
-];
 
 export default function IntakePage() {
   const navigate = useNavigate();
   const {
     addConversationMessage,
-    setCurrentQuestion,
     setInterviewProgress,
     setListening,
     setEmergency,
     setPriority,
     setCurrentStep,
     addSymptom,
+    beginInterview,
+    answerQuestion,
     session,
   } = useStore();
 
-  const [questionIndex, setQuestionIndex] = useState(0);
+  const currentQuestion = session.currentQuestion;
+
   const [textInput, setTextInput] = useState('');
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [scaleValue, setScaleValue] = useState(5);
@@ -98,80 +36,94 @@ export default function IntakePage() {
   const [showTranscript, setShowTranscript] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showEmergency, setShowEmergency] = useState(false);
+  const [error, setError] = useState('');
   const recognitionRef = useRef<any>(null);
-
-  const currentQuestion = DEMO_QUESTIONS[questionIndex];
+  const startedRef = useRef(false);
 
   useEffect(() => {
     setCurrentStep(4);
-    if (currentQuestion) {
-      setCurrentQuestion(currentQuestion);
-      setInterviewProgress((questionIndex / DEMO_QUESTIONS.length) * 100);
-      addConversationMessage('ai', currentQuestion.text);
+    if (!startedRef.current) {
+      startedRef.current = true;
+      beginInterview()
+        .then((q) => {
+          if (q) {
+            addConversationMessage('ai', q.text);
+          } else {
+            navigate('/documents');
+          }
+        })
+        .catch(() => setError('Could not start the interview. Please try again.'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionIndex, currentQuestion]);
-
-  const checkRedFlags = useCallback((selected: string[]) => {
-    const symptomNames = selected.map((s) => s);
-    for (const combo of RED_FLAG_COMBOS) {
-      if (combo.every((s) => symptomNames.includes(s))) {
-        return true;
-      }
-    }
-    return false;
   }, []);
 
-  const handleNext = useCallback(() => {
+  const handleNext = useCallback(async () => {
+    if (!currentQuestion) return;
+
     let answerText = '';
+    let inputType: 'voice' | 'text' | 'touch' = 'text';
+
     if (showTranscript && transcript) {
       answerText = transcript;
+      inputType = 'voice';
     } else if (currentQuestion.type === 'single_choice' || currentQuestion.type === 'multiple_choice') {
       answerText = selectedOptions.join(', ');
+      inputType = 'touch';
     } else if (currentQuestion.type === 'scale') {
-      answerText = `${scaleValue} out of 10`;
+      answerText = `${scaleValue}`;
+      inputType = 'touch';
     } else if (currentQuestion.type === 'yes_no') {
       answerText = selectedOptions[0] || '';
+      inputType = 'touch';
+    } else if (currentQuestion.type === 'number') {
+      answerText = textInput;
+      inputType = 'text';
     } else {
       answerText = textInput;
+      inputType = 'text';
     }
 
     if (!answerText.trim() && !showTranscript) return;
 
+    setIsLoading(true);
+    setError('');
     addConversationMessage('patient', answerText);
-    addSymptom({ id: currentQuestion.question_id, name: currentQuestion.text, severity: currentQuestion.type === 'scale' ? scaleValue : undefined });
+    addSymptom({
+      id: currentQuestion.question_id,
+      name: currentQuestion.text,
+      severity: currentQuestion.type === 'scale' ? scaleValue : undefined,
+    });
 
-    if (currentQuestion.type === 'single_choice' || currentQuestion.type === 'multiple_choice') {
-      if (checkRedFlags(selectedOptions)) {
+    try {
+      const { next, completed } = await answerQuestion(currentQuestion.question_id, answerText, inputType);
+
+      if (session.priority === 'urgent' && (currentQuestion.type === 'single_choice' || currentQuestion.type === 'multiple_choice')) {
         setEmergency(true);
         setPriority('urgent');
         setShowEmergency(true);
+        setIsLoading(false);
         return;
       }
-    }
 
-    setTextInput('');
-    setSelectedOptions([]);
-    setTranscript('');
-    setShowTranscript(false);
-    setIsListening(false);
-
-    if (questionIndex < DEMO_QUESTIONS.length - 1) {
-      setIsLoading(true);
-      setTimeout(() => {
-        setQuestionIndex((prev) => prev + 1);
-        setIsLoading(false);
-      }, 1200);
-    } else {
-      setIsLoading(true);
-      setTimeout(() => {
+      if (completed || !next) {
         setInterviewProgress(100);
         navigate('/documents');
-        setIsLoading(false);
-      }, 1500);
+        return;
+      }
+
+      addConversationMessage('ai', next.text);
+      setTextInput('');
+      setSelectedOptions([]);
+      setTranscript('');
+      setShowTranscript(false);
+      setIsListening(false);
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionIndex, textInput, selectedOptions, scaleValue, transcript, showTranscript, currentQuestion]);
+  }, [currentQuestion, textInput, selectedOptions, scaleValue, transcript, showTranscript, session.priority]);
 
   const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -252,6 +204,16 @@ export default function IntakePage() {
     );
   }
 
+  if (!currentQuestion) {
+    return (
+      <KioskLayout>
+        <div className="flex flex-col items-center text-center max-w-lg mx-auto gap-6">
+          <p className="text-xl text-navy-600">{error || 'Loading...'}</p>
+        </div>
+      </KioskLayout>
+    );
+  }
+
   const renderInput = () => {
     switch (currentQuestion.type) {
       case 'voice':
@@ -312,6 +274,7 @@ export default function IntakePage() {
             >
               Continue
             </button>
+            {error && <p className="text-danger-500 text-base">{error}</p>}
           </div>
         );
 
@@ -330,6 +293,7 @@ export default function IntakePage() {
             >
               Continue
             </button>
+            {error && <p className="text-danger-500 text-base">{error}</p>}
           </div>
         );
 
@@ -349,6 +313,7 @@ export default function IntakePage() {
             >
               Continue
             </button>
+            {error && <p className="text-danger-500 text-base">{error}</p>}
           </div>
         );
 
@@ -369,6 +334,7 @@ export default function IntakePage() {
             >
               Continue
             </button>
+            {error && <p className="text-danger-500 text-base">{error}</p>}
           </div>
         );
 
@@ -387,6 +353,7 @@ export default function IntakePage() {
             >
               Continue
             </button>
+            {error && <p className="text-danger-500 text-base">{error}</p>}
           </div>
         );
 
@@ -407,6 +374,7 @@ export default function IntakePage() {
             >
               Continue
             </button>
+            {error && <p className="text-danger-500 text-base">{error}</p>}
           </div>
         );
 

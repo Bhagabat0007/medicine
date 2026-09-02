@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, FileText, AlertCircle, Pill, Edit3, Send, Check } from 'lucide-react';
 import KioskLayout from '../components/layout/KioskLayout';
@@ -5,31 +6,20 @@ import { useStore } from '../store/useStore';
 
 export default function ReviewPage() {
   const navigate = useNavigate();
-  const { session, setCurrentStep, setSubmitting } = useStore();
+  const { session, setCurrentStep, setSubmitting, finishAndGenerateSummary } = useStore();
+  const [error, setError] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setSubmitting(true);
     setCurrentStep(6);
-    // Mock generating summary
-    setTimeout(() => {
-      useStore.getState().setSummary({
-        chief_complaint: { text: session.symptoms[0]?.name || 'General consultation' },
-        hpi: {
-          onset: 'Recent',
-          severity: session.symptoms[0]?.severity,
-          character: 'Not specified',
-          associated_symptoms: session.symptoms.slice(1).map((s) => s.name),
-        },
-        past_medical_history: [],
-        medications: session.documents.flatMap((d) => d.medicines || []),
-        allergies: [],
-        family_history: [],
-        personal_history: {},
-        review_of_systems: {},
-      });
+    try {
+      await finishAndGenerateSummary();
       setSubmitting(false);
       navigate('/submitted');
-    }, 2000);
+    } catch {
+      setSubmitting(false);
+      setError('Could not generate the summary. Please try again.');
+    }
   };
 
   if (session.isSubmitting) {
@@ -153,6 +143,8 @@ export default function ReviewPage() {
             Submit
           </button>
         </div>
+
+        {error && <p className="text-danger-500 text-base">{error}</p>}
       </div>
     </KioskLayout>
   );

@@ -1,83 +1,105 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle, Clock, Check, Send } from 'lucide-react';
 import ClinicalSummary from '../components/doctor/ClinicalSummary';
-import { useStore } from '../store/useStore';
-import type { ClinicalSummary as ClinicalSummaryType, DoctorPatient } from '../types';
+import { api, ApiError } from '../api/client';
+import type { ClinicalSummary as ClinicalSummaryType } from '../types';
 
-const MOCK_PATIENTS: Record<string, DoctorPatient> = {
-  p1: {
-    token: 'A104',
-    patientId: 'p1',
-    name: 'Rajesh Kumar',
-    age: 54,
-    priority: 'urgent',
-    status: 'SUMMARY_READY',
-    summary: {
-      chief_complaint: { text: 'Chest pain since yesterday' },
-      hpi: {
-        onset: 'Yesterday',
-        severity: 7,
-        character: 'Pressure-like',
-        associated_symptoms: ['Breathlessness'],
-      },
-      past_medical_history: ['Hypertension - 5 years'],
-      medications: [{ name: 'Amlodipine 5mg' }, { name: 'Aspirin 75mg' }],
-      allergies: ['Penicillin'],
-      family_history: ['Father - Heart disease'],
-      personal_history: { smoking: 'Ex-smoker', alcohol: 'Occasional' },
-      review_of_systems: {},
-    },
-    documents: [
-      { id: 'd1', name: 'Previous Prescription', type: 'prescription', date: '12 Aug 2026', medicines: [{ name: 'Amlodipine 5mg' }, { name: 'Aspirin 75mg' }], processed: true },
-    ],
-  },
-  p2: {
-    token: 'A105',
-    patientId: 'p2',
-    name: 'Priya Patel',
-    age: 42,
-    priority: 'normal',
-    status: 'SUMMARY_READY',
-    summary: {
-      chief_complaint: { text: 'Persistent headaches for 3 days' },
-      hpi: { onset: '3 days ago', severity: 5, character: 'Throbbing', location: 'Forehead' },
-      past_medical_history: [],
-      medications: [],
-      allergies: [],
-      family_history: [],
-      personal_history: {},
-      review_of_systems: {},
-    },
-    documents: [],
-  },
+const EMPTY_SUMMARY: ClinicalSummaryType = {
+  chief_complaint: { text: 'Not available' },
+  hpi: {},
+  past_medical_history: [],
+  medications: [],
+  allergies: [],
+  family_history: [],
+  personal_history: {},
+  review_of_systems: {},
 };
+
+interface DocumentRow {
+  id: string;
+  name: string;
+  date: string;
+}
 
 export default function DoctorPatientPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { setCurrentStep } = useStore();
-  const patient = MOCK_PATIENTS[id || 'p1'] || MOCK_PATIENTS.p1;
 
-  const [summary, setSummary] = useState<ClinicalSummaryType>(
-    patient.summary || {
-      chief_complaint: { text: 'Not available' },
-      hpi: {},
-      past_medical_history: [],
-      medications: [],
-      allergies: [],
-      family_history: [],
-      personal_history: {},
-      review_of_systems: {},
-    }
-  );
-
+  const [summary, setSummary] = useState<ClinicalSummaryType>(EMPTY_SUMMARY);
+  const [documents, setDocuments] = useState<DocumentRow[]>([]);
+  const [patientName, setPatientName] = useState('');
+  const [age, setAge] = useState<number | null>(null);
+  const [token, setToken] = useState('');
+  const [isUrgent, setIsUrgent] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  const handleConfirm = () => {
-    setConfirmed(true);
-    setCurrentStep(6);
+  useEffect(() => {
+    if (!id) return;
+    let active = true;
+    api
+      .getDoctorPatient(id)
+      .then((data) => {
+        if (!active) return;
+        setSummary(data.summary);
+        setDocuments(
+          data.documents.map((d) => ({ id: d.id, name: d.filename || 'Document', date: d.date || '' })),
+        );
+        setPatientName(data.patient.name);
+        setAge(data.patient.age);
+        setToken(data.patient.token);
+        setIsUrgent(data.priority === 'URGENT');
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (!active) return;
+        setError(e instanceof ApiError ? e.message : 'Could not load this patient.');
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  const handleConfirm = async () => {
+    if (!id) return;
+    setConfirming(true);
+    try {
+      await api.confirmDoctorSummary(id);
+      setConfirmed(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not confirm the summary.');
+    } finally {
+      setConfirming(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-navy-50 flex items-center justify-center">
+        <p className="text-lg text-navy-500">Loading patient...</p>
+      </div>
+    );
+  }
+
+  if (error && !confirmed) {
+    return (
+      <div className="min-h-screen bg-navy-50 flex items-center justify-center px-6">
+        <div className="text-center">
+          <p className="text-lg text-danger-500 mb-6">{error}</p>
+          <button
+            onClick={() => navigate('/doctor/dashboard')}
+            className="bg-primary-500 hover:bg-primary-600 text-white text-lg font-bold py-4 px-8 rounded-2xl min-h-[64px]"
+          >
+            Back to Queue
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-navy-50">
@@ -93,8 +115,8 @@ export default function DoctorPatientPage() {
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-navy-900">{patient.name}</h1>
-                {patient.priority === 'urgent' && (
+                <h1 className="text-2xl font-bold text-navy-900">{patientName}</h1>
+                {isUrgent && (
                   <span className="bg-danger-100 text-danger-600 text-sm font-bold px-3 py-1 rounded-full flex items-center gap-1">
                     <AlertTriangle className="w-4 h-4" />
                     Priority
@@ -102,10 +124,10 @@ export default function DoctorPatientPage() {
                 )}
               </div>
               <div className="flex items-center gap-4 text-base text-navy-500 mt-1">
-                <span>Age: {patient.age}</span>
+                <span>Age: {age ?? '—'}</span>
                 <span className="flex items-center gap-1">
                   <Clock className="w-4 h-4" />
-                  Token: {patient.token}
+                  Token: {token}
                 </span>
               </div>
             </div>
@@ -147,11 +169,11 @@ export default function DoctorPatientPage() {
           <>
             <ClinicalSummary summary={summary} onSummaryChange={setSummary} />
 
-            {patient.documents.length > 0 && (
+            {documents.length > 0 && (
               <div className="mt-6 bg-white rounded-2xl border border-navy-200 p-5 shadow-sm">
                 <h3 className="text-lg font-semibold text-navy-700 mb-3">Uploaded Documents</h3>
                 <div className="space-y-2">
-                  {patient.documents.map((doc) => (
+                  {documents.map((doc) => (
                     <div key={doc.id} className="flex items-center justify-between">
                       <span className="text-base text-navy-600">{doc.name}</span>
                       <span className="text-sm text-navy-400">{doc.date}</span>
@@ -161,12 +183,15 @@ export default function DoctorPatientPage() {
               </div>
             )}
 
+            {error && <p className="text-danger-500 text-base mt-4">{error}</p>}
+
             <button
               onClick={handleConfirm}
-              className="w-full mt-6 bg-primary-500 hover:bg-primary-600 text-white text-xl font-bold py-5 px-8 rounded-2xl shadow-lg min-h-[72px] flex items-center justify-center gap-3"
+              disabled={confirming}
+              className="w-full mt-6 bg-primary-500 hover:bg-primary-600 disabled:bg-navy-300 text-white text-xl font-bold py-5 px-8 rounded-2xl shadow-lg min-h-[72px] flex items-center justify-center gap-3"
             >
               <Send className="w-6 h-6" />
-              Confirm & Continue
+              {confirming ? 'Confirming...' : 'Confirm & Continue'}
             </button>
           </>
         )}

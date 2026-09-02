@@ -6,68 +6,49 @@ import { useStore } from '../store/useStore';
 
 type ViewState = 'upload' | 'processing' | 'result';
 
-const MOCK_RESULTS = [
-  {
-    name: 'Prescription',
-    date: '12 Aug 2026',
-    medicines: [
-      { name: 'Paracetamol 500mg', dosage: '1 tablet 3x daily' },
-      { name: 'Omeprazole 20mg', dosage: '1 tablet before breakfast' },
-    ],
-  },
-  {
-    name: 'Lab Report',
-    date: '5 Aug 2026',
-    medicines: [],
-    diagnoses: ['Elevated blood sugar', 'Normal cholesterol'],
-  },
-];
+interface DocResult {
+  name: string;
+  date: string;
+  medicines: { name: string; dosage?: string }[];
+  diagnoses: string[];
+}
 
 export default function DocumentsPage() {
   const navigate = useNavigate();
-  const { addDocument, setCurrentStep } = useStore();
+  const { submitDocument, addDocument, setCurrentStep } = useStore();
   const [view, setView] = useState<ViewState>('upload');
-  const [progress, setProgress] = useState(0);
-  const [currentDoc, setCurrentDoc] = useState<typeof MOCK_RESULTS[0] | null>(null);
+  const [currentDoc, setCurrentDoc] = useState<DocResult | null>(null);
+  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUpload = (isScan: boolean) => {
-    if (isScan && fileInputRef.current) {
-      fileInputRef.current.click();
-      return;
-    }
-    processDocument();
+  const handleUpload = () => {
+    fileInputRef.current?.click();
   };
 
-  const processDocument = () => {
+  const processDocument = async (file: File) => {
     setView('processing');
-    setProgress(0);
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          const result = MOCK_RESULTS[Math.floor(Math.random() * MOCK_RESULTS.length)];
-          setCurrentDoc(result);
-          addDocument({
-            id: Math.random().toString(36).substring(2, 15),
-            name: result.name,
-            type: 'prescription',
-            date: result.date,
-            medicines: result.medicines,
-            diagnoses: result.diagnoses,
-            processed: true,
-          });
-          setTimeout(() => setView('result'), 500);
-          return 100;
-        }
-        return prev + 8;
-      });
-    }, 150);
+    setError('');
+    try {
+      const doc = await submitDocument(file);
+      const mapped = {
+        name: doc.filename || 'Document',
+        date: doc.date || 'Today',
+        medicines: doc.medicines ?? [],
+        diagnoses: doc.diagnoses ?? [],
+      };
+      setCurrentDoc(mapped);
+      addDocument({ id: doc.id, name: mapped.name, type: doc.document_type || 'document', date: mapped.date, medicines: mapped.medicines, diagnoses: mapped.diagnoses, processed: true });
+      setView('result');
+    } catch {
+      setView('upload');
+      setError("We couldn't read this document. Please try another photo.");
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      processDocument();
+    const file = e.target.files?.[0];
+    if (file) {
+      processDocument(file);
     }
   };
 
@@ -83,13 +64,10 @@ export default function DocumentsPage() {
           <div className="text-4xl">📄</div>
           <h2 className="text-2xl font-bold text-navy-800">Reading your document...</h2>
           <p className="text-lg text-navy-500">This may take a few seconds</p>
-          <div className="w-full max-w-sm">
-            <div className="w-full h-3 bg-navy-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary-500 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+          <div className="w-full max-w-sm flex items-center justify-center gap-2">
+            <span className="w-3 h-3 bg-primary-400 rounded-full typing-dot-1" />
+            <span className="w-3 h-3 bg-primary-400 rounded-full typing-dot-2" />
+            <span className="w-3 h-3 bg-primary-400 rounded-full typing-dot-3" />
           </div>
         </div>
       </KioskLayout>
@@ -177,7 +155,7 @@ export default function DocumentsPage() {
 
         <div className="flex flex-col gap-4 w-full">
           <button
-            onClick={() => handleUpload(true)}
+            onClick={handleUpload}
             className="w-full bg-white border-2 border-navy-200 hover:border-primary-500 hover:bg-primary-50 text-navy-800 text-xl font-semibold py-5 px-8 rounded-2xl transition-all min-h-[72px] flex items-center justify-center gap-3"
           >
             <Camera className="w-6 h-6 text-primary-500" />
@@ -185,12 +163,14 @@ export default function DocumentsPage() {
           </button>
 
           <button
-            onClick={() => handleUpload(false)}
+            onClick={handleUpload}
             className="w-full bg-white border-2 border-navy-200 hover:border-primary-500 hover:bg-primary-50 text-navy-800 text-xl font-semibold py-5 px-8 rounded-2xl transition-all min-h-[72px] flex items-center justify-center gap-3"
           >
             <Upload className="w-6 h-6 text-primary-500" />
             Upload Document
           </button>
+
+          {error && <p className="text-danger-500 text-base">{error}</p>}
 
           <button
             onClick={handleContinue}

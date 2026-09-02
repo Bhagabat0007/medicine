@@ -58,6 +58,7 @@ export interface ClinicalSummary {
 
 export interface PatientSession {
   patientId: string;
+  sessionId: string;
   name: string;
   age: number;
   language: Language;

@@ -6,9 +6,11 @@ import { useStore } from '../store/useStore';
 
 export default function ConsentPage() {
   const navigate = useNavigate();
-  const { setConsent, setCurrentStep } = useStore();
+  const { confirmConsent, setCurrentStep } = useStore();
   const [agreed, setAgreed] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const speakConsent = () => {
     if ('speechSynthesis' in window) {
@@ -20,11 +22,19 @@ export default function ConsentPage() {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (agreed) {
-      setConsent(true);
-      setCurrentStep(3);
-      navigate('/intake');
+      setSubmitting(true);
+      setError('');
+      try {
+        await confirmConsent(true);
+        setCurrentStep(3);
+        navigate('/intake');
+      } catch {
+        setError('Could not save your consent. Please try again.');
+      } finally {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -68,11 +78,13 @@ export default function ConsentPage() {
 
         <button
           onClick={handleContinue}
-          disabled={!agreed}
+          disabled={!agreed || submitting}
           className="w-full bg-primary-500 hover:bg-primary-600 disabled:bg-navy-300 disabled:cursor-not-allowed text-white text-xl font-bold py-5 px-8 rounded-2xl shadow-lg transition-colors min-h-[72px]"
         >
-          Continue
+          {submitting ? 'Saving...' : 'Continue'}
         </button>
+
+        {error && <p className="text-danger-500 text-base">{error}</p>}
 
         <button
           onClick={() => setShowPrivacy(!showPrivacy)}
