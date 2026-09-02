@@ -10,6 +10,15 @@ beforeAll(() => {
   seedDemoData();
 });
 
+describe('Seed idempotency', () => {
+  it('does not duplicate demo patients on a second run', () => {
+    const before = db.patients.size;
+    expect(before).toBeGreaterThan(0);
+    seedDemoData();
+    expect(db.patients.size).toBe(before);
+  });
+});
+
 describe('Session lifecycle', () => {
   it('creates a patient', async () => {
     const res = await request(app)
@@ -177,8 +186,23 @@ describe('Summary + doctor', () => {
     expect(res.body.data.integration.mock).toBe(true);
   });
 
-  it('lists the doctor queue', async () => {
+  it('rejects unauthorised access to the doctor queue', async () => {
     const res = await request(app).get('/api/v1/doctor/queue');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHORISED');
+  });
+
+  it('logs in a doctor and lists the queue', async () => {
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ username: 'admin', password: 'doctor123' });
+    expect(login.status).toBe(200);
+    expect(login.body.data.token).toBeTruthy();
+    const token = login.body.data.token;
+
+    const res = await request(app)
+      .get('/api/v1/doctor/queue')
+      .set('Authorization', `Bearer ${token}`);
     expect(res.body.success).toBe(true);
     expect(Array.isArray(res.body.data)).toBe(true);
     expect(res.body.data.length).toBeGreaterThan(0);
@@ -188,13 +212,21 @@ describe('Summary + doctor', () => {
     const patient = Array.from(db.patients.values())[0];
     const patientId = patient.id;
 
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ username: 'admin', password: 'doctor123' });
+    const token = login.body.data.token;
+
     const edit = await request(app)
       .patch(`/api/v1/doctor/patients/${patientId}/summary`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ chief_complaint: 'Chest pain for 2 days' });
     expect(edit.status).toBe(200);
     expect(edit.body.data.chief_complaint.text).toBe('Chest pain for 2 days');
 
-    const confirm = await request(app).post(`/api/v1/doctor/patients/${patientId}/summary/confirm`);
+    const confirm = await request(app)
+      .post(`/api/v1/doctor/patients/${patientId}/summary/confirm`)
+      .set('Authorization', `Bearer ${token}`);
     expect(confirm.body.data.status).toBe('CONFIRMED');
   });
 });

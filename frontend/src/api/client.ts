@@ -19,9 +19,18 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !(init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const token = getStoredToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}${path}`, init);
+    res = await fetch(`${BASE_URL}${path}`, { ...init, headers });
   } catch {
     throw new ApiError('NETWORK_ERROR', 'Could not reach the server. Please check your connection.', 0);
   }
@@ -46,6 +55,28 @@ function jsonInit(method: string, payload: unknown): RequestInit {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   };
+}
+
+const TOKEN_KEY = 'medicase_auth_token';
+
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function storeAuthToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export interface ApiPatient {
@@ -112,7 +143,36 @@ export interface ApiDocument {
   status?: string;
 }
 
+export interface DoctorUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: string;
+  specialty: string;
+}
+
+export interface LoginResult {
+  token: string;
+  user: DoctorUser;
+  expiresAt: string;
+}
+
+export interface SystemCapabilities {
+  llm: { enabled: boolean; mode: 'live' | 'simulated' };
+  ocr: { mode: 'live' | 'simulated' };
+  fhir: { mode: 'live' | 'simulated' };
+  persistence: { enabled: boolean; location: string };
+  auth: { enabled: boolean };
+  env: string;
+}
+
 export const api = {
+  login: (input: { username: string; password: string }) =>
+    request<LoginResult>('/auth/login', jsonInit('POST', input)),
+
+  getMe: () => request<DoctorUser & { auth?: unknown }>('/auth/me'),
+
+  getCapabilities: () => request<SystemCapabilities>('/system/capabilities'),
   createPatient: (input: { name: string; age?: number; gender?: string }) =>
     request<ApiPatient>('/patients', jsonInit('POST', input)),
 

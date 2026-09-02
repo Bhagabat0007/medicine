@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getSession } from '../../services/session_service';
 import { generateSummary } from '../../services/summary_service';
+import { generateClinicalSummaryDraft } from '../../services/llm_service';
 import { fhirService } from '../../services/fhir_service';
 import { asyncHandler, param } from '../helpers';
 import { badRequest } from '../../core/errors';
@@ -18,7 +19,12 @@ router.post(
     }
 
     session.status = 'DOCUMENT_PROCESSING';
-    const summary = generateSummary(session);
+
+    // Prefer an LLM-generated draft; fall back to the deterministic generator
+    // when no LLM key is configured or the call fails.
+    const aiDraft = await generateClinicalSummaryDraft(session);
+    const summary = aiDraft ?? generateSummary(session);
+
     session.summary = summary;
     session.status = 'SUMMARY_READY';
 
@@ -27,7 +33,7 @@ router.post(
 
     res.json({
       success: true,
-      data: { summary, integration: push },
+      data: { summary, integration: push, provider: aiDraft ? 'llm' : 'rules' },
       error: null,
     });
   }),

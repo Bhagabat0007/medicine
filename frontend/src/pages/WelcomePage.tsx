@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Activity, Clock, Volume2 } from 'lucide-react';
+import { Activity, Clock, Volume2, UserCog } from 'lucide-react';
 import KioskLayout from '../components/layout/KioskLayout';
 
 export default function WelcomePage() {
@@ -52,6 +52,14 @@ export default function WelcomePage() {
             This session usually takes 3-5 minutes
           </div>
         </div>
+
+        <button
+          onClick={() => navigate('/doctor/login')}
+          className="mt-4 flex items-center gap-2 text-sm font-semibold text-navy-500 hover:text-primary-700 border border-navy-200 hover:border-primary-300 bg-white px-5 py-3 rounded-xl transition-colors"
+        >
+          <UserCog className="w-4 h-4" />
+          Doctor / Staff Login
+        </button>
       </div>
     </KioskLayout>
   );

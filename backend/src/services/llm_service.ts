@@ -1,5 +1,5 @@
 import { config } from '../core/config';
-import type { Question, QuestionType, Session } from '../types/index';
+import type { Question, QuestionType, Session, ClinicalSummary } from '../types/index';
 
 /**
  * Groq/OpenAI-compatible LLM wrapper.
@@ -239,4 +239,109 @@ export async function extractIdentityFromText(ocrText: string): Promise<Extracte
       age: typeof confidences?.age === 'number' ? confidences.age : undefined,
     },
   };
+}
+
+function sanitizeString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function sanitizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => sanitizeString(v)).filter(Boolean);
+}
+
+/**
+ * Ask the LLM to produce a natural, structured clinical summary draft from the
+ * conversation + structured clinical data. Returns `null` on failure so the
+ * deterministic rule-based generator remains the fallback.
+ *
+ * The output is explicitly framed as an AI-generated DRAFT for doctor review -
+ * never an autonomous diagnosis or treatment recommendation.
+ */
+export async function generateClinicalSummaryDraft(session: Session): Promise<ClinicalSummary | null> {
+  if (!llmEnabled()) return null;
+
+  const system = [
+    'You are a clinical documentation assistant for a hospital.',
+    'Produce a concise, structured AI-generated clinical draft from the patient interview.',
+    'NEVER provide a diagnosis, prognosis, or treatment recommendation. Only summarize what the patient reported.',
+    'Return strict JSON with exactly these keys:',
+    'chief_complaint (object with "text" string), hpi (object with optional onset/severity/character/location/duration/associated_symptoms array), past_medical_history (array of strings), medications (array of {name, dosage}), allergies (array of strings), family_history (array of strings), personal_history (object), review_of_systems (object).',
+    'Only include information the patient actually reported. Use empty values when unknown.',
+  ].join('\n');
+
+  const clinical = session.clinical_data;
+  const user = [
+    'Clinical data extracted so far:',
+    clinical.chief_complaint ? `Chief complaint: ${clinical.chief_complaint}` : '',
+    clinical.onset ? `Onset: ${clinical.onset}` : '',
+    clinical.severity !== undefined ? `Severity: ${clinical.severity}/10` : '',
+    clinical.character ? `Character: ${clinical.character}` : '',
+    clinical.location ? `Location: ${clinical.location}` : '',
+    clinical.duration ? `Duration: ${clinical.duration}` : '',
+    (clinical.associated_symptoms ?? []).length
+      ? `Associated symptoms: ${clinical.associated_symptoms?.join(', ')}`
+      : '',
+    '',
+    'Full interview transcript:',
+    buildTranscript(session),
+    '',
+    'Return the AI-generated clinical draft as JSON.',
+  ].join('\n');
+
+  const result = await chatJSON(
+    [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    0.3,
+  );
+
+  if (!result) return null;
+
+  const ccText = sanitizeString(
+    (result.chief_complaint as { text?: unknown } | undefined)?.text ?? result.chief_complaint,
+  );
+  const hpiRaw = (result.hpi as Record<string, unknown> | undefined) ?? {};
+  const medsRaw = Array.isArray(result.medications) ? result.medications : [];
+
+  return {
+    chief_complaint: { text: ccText || 'Chief complaint not specified' },
+    hpi: {
+      onset: sanitizeString(hpiRaw.onset) || undefined,
+      severity: typeof hpiRaw.severity === 'number' ? hpiRaw.severity : undefined,
+      character: sanitizeString(hpiRaw.character) || undefined,
+      location: sanitizeString(hpiRaw.location) || undefined,
+      duration: sanitizeString(hpiRaw.duration) || undefined,
+      associated_symptoms:
+        andUndefined(sanitizeStringArray(hpiRaw.associated_symptoms)) ?? undefined,
+    },
+    past_medical_history: sanitizeStringArray(result.past_medical_history),
+    medications: medsRaw.reduce<{ name: string; dosage?: string }[]>((acc, m) => {
+      const med = m as { name?: unknown; dosage?: unknown };
+      const name = sanitizeString(med.name);
+      if (!name) return acc;
+      const dosage = sanitizeString(med.dosage);
+      acc.push(dosage ? { name, dosage } : { name });
+      return acc;
+    }, []),
+    allergies: sanitizeStringArray(result.allergies),
+    family_history: sanitizeStringArray(result.family_history),
+    personal_history: toRecord(result.personal_history),
+    review_of_systems: toRecord(result.review_of_systems),
+  };
+}
+
+function andUndefined(v: string[]): string[] | null {
+  return v.length ? v : null;
+}
+
+function toRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    const s = sanitizeString(v);
+    if (s) out[k] = s;
+  }
+  return out;
 }

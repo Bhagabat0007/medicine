@@ -1472,3 +1472,140 @@ The backend provides the intelligence.
 The doctor dashboard demonstrates the impact.
 
 > **Patient speaks → MediKiosk structures → Doctor decides.**
+
+---
+
+# 48. Production-Readiness Upgrades (Implemented)
+
+This section records the upgrades made to move the backend from a purely
+in-memory, unauthenticated hackathon MVP toward a real, secure, durable
+service. It addresses the earlier review gaps: **no auth, no persistence,
+simulated AI, and no navigation entry point**.
+
+## 48.1 Doctor Authentication (JWT)
+
+Previously the `/doctor/*` and `/integration/*` endpoints were entirely open.
+Any visitor could open the dashboard by typing the URL. This is now fixed.
+
+- **Login endpoint** — `POST /api/v1/auth/login` (`backend/src/api/routes/auth.ts`)
+  accepts `{ username, password }`, verifies against the seeded doctor account
+  and issues a signed JWT.
+- **Session endpoint** — `GET /api/v1/auth/me` returns the current doctor
+  profile for an authenticated (Bearer) request.
+- **Auth middleware** — `backend/src/api/middleware/auth.ts` (`requireAuth`)
+  validates the `Authorization: Bearer <token>` header and attaches the
+  verified payload to `req.auth`.
+- **Protected routes** — `backend/src/api/router.ts` now applies `requireAuth`
+  to the entire `/doctor` and `/integration` router mounts.
+- **Seeded credentials** — default `admin` / `doctor123`, overridable via
+  `DOCTOR_USERNAME` and `DOCTOR_PASSWORD` env vars. Passwords are verified
+  against a bcrypt hash, and the JWT is signed with `JWT_SECRET`
+  (`backend/src/services/auth_service.ts`).
+
+## 48.2 Persistence (JSON File Store)
+
+The original MVP used an in-memory `Map` store that reset on every restart.
+It now persists to disk so data survives server restarts.
+
+- **File location** — `<backend>/data/medikiosk-db.json` (`DATA_DIR` env).
+- **Automatic writes** — `backend/src/db/database.ts` uses a `PersistingMap`
+  subclass that debounce-writes to disk after every mutation, so existing
+  `db.sessions.set(...)` calls remain unchanged.
+- **Atomic saves** — `backend/src/db/persistence.ts` writes to a temp file then
+  renames, avoiding corruption on crash.
+- **Test isolation** — persistence is disabled when `NODE_ENV=test` /
+  `VITEST=true` so automated tests start from a clean store each run.
+
+## 48.3 Real LLM Integration (when configured)
+
+The interview engine already had an LLM path; the **summary generator** is now
+also LLM-driven.
+
+- `backend/src/services/llm_service.ts` adds `generateClinicalSummaryDraft()` —
+  it asks an OpenAI/Groq-compatible LLM to produce a structured clinical draft
+  (CC → HPI → PMH → meds → allergies → FH → PH → ROS).
+- `backend/src/api/routes/summary.ts` now prefers the LLM draft and falls back
+  to the deterministic rule-based generator when no `LLM_API_KEY` is set or the
+  call fails. The response includes `provider: "llm" | "rules"` for transparency.
+- Safety: the LLM prompt explicitly forbids diagnoses and treatment
+  recommendations, and the output is always an **AI-generated draft** for the
+  doctor to review.
+
+## 48.4 OCR Provider Abstraction
+
+`backend/src/services/ocr_service.ts` now exposes a provider-aware `mode`:
+
+- **Real** — when both `OCR_API_KEY` and `OCR_ENDPOINT` are set, it calls a
+  Document-Intelligence-compatible REST endpoint to extract fields.
+- **Simulated** — otherwise it returns the deterministic canned results, so the
+  app keeps working offline and in tests.
+
+The route layer (`documents.ts`, `patients.ts`) is unchanged.
+
+## 48.5 New Environment Variables
+
+See `backend/.env.example`:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATA_DIR` | Directory for the persistent JSON database (default `data`) |
+| `DOCTOR_USERNAME` | Seeded doctor username (default `admin`) |
+| `DOCTOR_PASSWORD` | Seeded doctor password (default `doctor123`) |
+| `JWT_SECRET` | HMAC secret for signing JWT tokens (must be set in prod) |
+| `JWT_EXPIRES_IN` | Token lifetime (default `12h`) |
+| `OCR_ENDPOINT` | Real OCR endpoint (paired with `OCR_API_KEY`) |
+
+## 48.6 New Dependencies
+
+- `jsonwebtoken` + `@types/jsonwebtoken` — JWT sign/verify
+- `bcryptjs` + `@types/bcryptjs` — password hashing
+
+## 48.7 Updated Test Coverage
+
+`backend/tests/api.test.ts` now verifies:
+
+- Unauthenticated `/doctor/queue` returns `401 UNAUTHORISED`.
+- A valid login issues a token and grants access to the queue.
+- The doctor can still edit + confirm a summary when authenticated.
+
+All 16 tests pass (`npm test`).
+
+## 48.8 Remaining Production Gaps
+
+For a true production deployment the following are still open:
+
+- A real RDBMS (Postgres) instead of the JSON file store.
+- Postgres-backed FHIR/ABDM write path (currently mocked).
+- Refresh-token rotation, multi-factor auth, and RBAC beyond the single role.
+- Audit logging and full HIPAA/DPDP-style safeguards.
+- HTTPS + secret management in CI/CD.
+
+## 48.9 Idempotent Demo Seeding
+
+Previously `seedDemoData()` ran unconditionally on every server start. Combined
+with the new persistence layer this re-inserted the same demo patients every
+restart, so the dashboard accumulated duplicate/identical records
+(`backend/src/seed.ts`).
+
+- The seed now runs only when the database has **no patients at all**, and logs
+  a skip notice otherwise. This prevents duplication while still guaranteeing a
+  non-empty demo on first launch.
+
+## 48.10 System Capabilities Endpoint
+
+A public status endpoint was added so the frontend can honestly report which
+subsystems are live vs. simulated (never exposes secrets):
+
+- `GET /api/v1/system/capabilities` (`backend/src/api/routes/system.ts`)
+  returns `{ llm, ocr, fhir, persistence, auth, env }` mode flags.
+- `FHIRService` now exposes a `mode: 'live' | 'simulated'` getter
+  (`backend/src/services/fhir_service.ts`) used by this endpoint.
+
+## 48.11 Root Monorepo Tooling
+
+A root orchestrator `package.json` was added so the whole project can be driven
+from one place (`npm run dev`, `npm run build`, `npm test`, `npm run lint`,
+`npm run install:all`). It uses `concurrently` + `npm --prefix` and does not
+disturb the per-package `node_modules`. A root `.gitignore` and an updated
+`README.md` document the layout and commands.
+

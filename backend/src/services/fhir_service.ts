@@ -23,6 +23,11 @@ export class FHIRService {
     this.mock = !config.fhirBaseUrl || config.appEnv !== 'production';
   }
 
+  /** Whether FHIR pushes are simulated or hitting a real ABDM/HIS endpoint. */
+  get mode(): 'live' | 'simulated' {
+    return this.mock ? 'simulated' : 'live';
+  }
+
   async pushPatient(sessionId: string): Promise<FhirPushResult> {
     return this.record('HIS', 'Patient', sessionId);
   }

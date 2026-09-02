@@ -1244,3 +1244,99 @@ DOCTOR
 ```
 
 That transformation — **patient conversation → structured clinical history → doctor-ready summary** — is the core frontend experience.
+
+---
+
+# Production-Readiness & Navigation Upgrades (Implemented)
+
+This section records the frontend changes made to address the earlier review
+gaps: **no login / the dashboard was only reachable by typing the URL, a dead
+Logout button, and hard-coded doctor profile.**
+
+## Doctor Authentication Flow
+
+- **Login page** — `frontend/src/pages/DoctorLoginPage.tsx` (`/doctor/login`)
+  authenticates against the backend `POST /api/v1/auth/login` and stores the
+  JWT in `localStorage`. Includes a split-layout (navy branding panel + form),
+  a working "demo credentials" autofill, and inline error display.
+- **Auth store** — `frontend/src/store/useAuth.ts` (Zustand) manages
+  `user`, `token`, `login`, `logout`, and `restore` (session restore on refresh).
+- **Route guard** — `frontend/src/components/doctor/RequireAuth.tsx` wraps the
+  doctor routes (`/doctor/dashboard`, `/doctor/patient/:id`, `/voice`). It
+  restores the session and redirects to `/doctor/login` when unauthenticated,
+  so users no longer need to type a URL to reach (or protect) the dashboard.
+- **Token injection** — `frontend/src/api/client.ts` now attaches
+  `Authorization: Bearer <token>` to every request and exposes `login()` /
+  `getMe()` plus `storeAuthToken()` / `getStoredToken()`.
+- **Functional Logout** — the sidebar "Logout" button in
+  `frontend/src/components/doctor/DoctorLayout.tsx` now clears the token and
+  redirects to the login page. The sidebar and header avatars now render the
+  logged-in doctor's name, specialty, and initials from the auth store.
+
+## Updated Routes (`frontend/src/App.tsx`)
+
+```
+/doctor/login                    -> DoctorLoginPage   (public)
+/doctor/dashboard                -> RequireAuth -> DoctorDashboard
+/doctor/patient/:id              -> RequireAuth -> DoctorPatientPage
+/voice                           -> RequireAuth -> VoiceInputPage
+```
+
+## Workflow Preserved
+
+The end-to-end experience is unchanged for the patient kiosk:
+
+```
+Patient speaks -> AI collects history -> AI structures info
+ -> documents digitized -> doctor receives concise clinical summary
+ -> doctor reviews -> confirms
+```
+
+The kiosk's "View Doctor Dashboard" (SubmittedPage) now flows through the auth
+guard, landing on the login page if the doctor is not yet signed in.
+
+## Verification
+
+- `npm run build` (strict TS + Vite) passes.
+- `npm run lint` (oxlint) passes with no warnings.
+
+## Remaining Production Gaps
+
+- Persistent refresh tokens / remember-me across browser restarts beyond the
+  stored JWT.
+- Explicit role-based UI (admin vs. doctor vs. staff).
+
+## Visible Doctor Login Entry (Kiosk Welcome Screen)
+
+Previously the only way to reach the doctor workspace was typing
+`/doctor/login` in the address bar. A visible **Doctor / Staff Login** button
+(`frontend/src/pages/WelcomePage.tsx`) now navigates directly to
+`/doctor/login`, and the login page's "Back to Kiosk" link returns to `/welcome`
+— so staff can reach the dashboard from the kiosk with no URL typing.
+
+## Dashboard Reflects Real Data
+
+`frontend/src/pages/DoctorDashboard.tsx` previously hard-coded the four stat
+cards (124 / 32 / 92 / 10) and a mock `DEMO_CASES` table regardless of backend
+state. Now:
+
+- The stats (Total / Pending / Completed / Priority) are computed from the
+  live `queue` loaded from the API when data exists, falling back to the
+  spec's polished demo numbers **only** when the queue is genuinely empty.
+- The "Today's Cases" table and the "Priority Case" card render real patient
+  data (name, age/sex, token, urgency) and link to the real patient route.
+- The mobile case-count badge now shows the actual number of rendered rows.
+
+## System Status Badges
+
+The dashboard fetches `GET /api/v1/system/capabilities` and shows honest
+status chips (AI / OCR / FHIR / Data = live vs. simulated), so the demo clearly
+indicates which subsystems are wired to real providers vs. fallbacks. Wiring a
+real `LLM_API_KEY` (or `OCR_API_KEY` + `OCR_ENDPOINT`) flips the corresponding
+badge to live with no frontend changes.
+
+## Root Orchestrator
+
+A root `package.json` with `concurrently` + `npm --prefix` scripts lets the
+whole project run from one place (`npm run dev`, `npm run build`, `npm test`,
+`npm run lint`, `npm run install:all`). See the root `README.md`.

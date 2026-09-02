@@ -1,12 +1,24 @@
 import { db, generateId, generateToken } from './db/database';
 import type { Session, Patient } from './types/index';
 import { sessionExpiryDate } from './services/session_service';
+import { logger } from './core/logger';
 
 /**
- * Seed one demo patient matching the spec (Rajesh Kumar) so the doctor
- * dashboard and demo flow are non-empty on first launch.
+ * Seed demo patients so the doctor dashboard and demo flow are non-empty on
+ * first launch.
+ *
+ * Idempotent: with persistence enabled the store may already contain data from
+ * a previous run, so we only seed when there are no patients at all. This
+ * prevents the same demo patients being duplicated on every server restart.
  */
 export function seedDemoData(): void {
+  if (db.patients.size > 0) {
+    logger.info('Skipping demo seed - database already has patients', {
+      patients: db.patients.size,
+    });
+    return;
+  }
+
   const patientId = generateId();
   const patient: Patient = {
     id: patientId,

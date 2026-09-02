@@ -9,6 +9,9 @@ import ReviewPage from './pages/ReviewPage';
 import SubmittedPage from './pages/SubmittedPage';
 import DoctorDashboard from './pages/DoctorDashboard';
 import DoctorPatientPage from './pages/DoctorPatientPage';
+import VoiceInputPage from './pages/VoiceInputPage';
+import DoctorLoginPage from './pages/DoctorLoginPage';
+import RequireAuth from './components/doctor/RequireAuth';
 
 export default function App() {
   return (
@@ -22,8 +25,34 @@ export default function App() {
       <Route path="/documents" element={<DocumentsPage />} />
       <Route path="/review" element={<ReviewPage />} />
       <Route path="/submitted" element={<SubmittedPage />} />
-      <Route path="/doctor/dashboard" element={<DoctorDashboard />} />
-      <Route path="/doctor/patient/:id" element={<DoctorPatientPage />} />
+
+      <Route path="/doctor/login" element={<DoctorLoginPage />} />
+      <Route
+        path="/doctor/dashboard"
+        element={
+          <RequireAuth>
+            <DoctorDashboard />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/doctor/patient/:id"
+        element={
+          <RequireAuth>
+            <DoctorPatientPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/voice"
+        element={
+          <RequireAuth>
+            <VoiceInputPage />
+          </RequireAuth>
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/welcome" replace />} />
     </Routes>
   );
 }

@@ -5,6 +5,10 @@ node_modules/
 dist/
 build/
 
+# persistence - contains patient data (PII), never commit
+data/
+*.db.json
+
 # env - never commit secrets
 .env
 .env.local
