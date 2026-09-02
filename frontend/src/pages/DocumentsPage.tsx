@@ -1,0 +1,205 @@
+import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Camera, Upload, FileText, Check } from 'lucide-react';
+import KioskLayout from '../components/layout/KioskLayout';
+import { useStore } from '../store/useStore';
+
+type ViewState = 'upload' | 'processing' | 'result';
+
+const MOCK_RESULTS = [
+  {
+    name: 'Prescription',
+    date: '12 Aug 2026',
+    medicines: [
+      { name: 'Paracetamol 500mg', dosage: '1 tablet 3x daily' },
+      { name: 'Omeprazole 20mg', dosage: '1 tablet before breakfast' },
+    ],
+  },
+  {
+    name: 'Lab Report',
+    date: '5 Aug 2026',
+    medicines: [],
+    diagnoses: ['Elevated blood sugar', 'Normal cholesterol'],
+  },
+];
+
+export default function DocumentsPage() {
+  const navigate = useNavigate();
+  const { addDocument, setCurrentStep } = useStore();
+  const [view, setView] = useState<ViewState>('upload');
+  const [progress, setProgress] = useState(0);
+  const [currentDoc, setCurrentDoc] = useState<typeof MOCK_RESULTS[0] | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = (isScan: boolean) => {
+    if (isScan && fileInputRef.current) {
+      fileInputRef.current.click();
+      return;
+    }
+    processDocument();
+  };
+
+  const processDocument = () => {
+    setView('processing');
+    setProgress(0);
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          const result = MOCK_RESULTS[Math.floor(Math.random() * MOCK_RESULTS.length)];
+          setCurrentDoc(result);
+          addDocument({
+            id: Math.random().toString(36).substring(2, 15),
+            name: result.name,
+            type: 'prescription',
+            date: result.date,
+            medicines: result.medicines,
+            diagnoses: result.diagnoses,
+            processed: true,
+          });
+          setTimeout(() => setView('result'), 500);
+          return 100;
+        }
+        return prev + 8;
+      });
+    }, 150);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processDocument();
+    }
+  };
+
+  const handleContinue = () => {
+    setCurrentStep(5);
+    navigate('/review');
+  };
+
+  if (view === 'processing') {
+    return (
+      <KioskLayout>
+        <div className="flex flex-col items-center text-center max-w-lg mx-auto gap-6">
+          <div className="text-4xl">📄</div>
+          <h2 className="text-2xl font-bold text-navy-800">Reading your document...</h2>
+          <p className="text-lg text-navy-500">This may take a few seconds</p>
+          <div className="w-full max-w-sm">
+            <div className="w-full h-3 bg-navy-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary-500 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </KioskLayout>
+    );
+  }
+
+  if (view === 'result' && currentDoc) {
+    return (
+      <KioskLayout>
+        <div className="flex flex-col items-center text-center max-w-lg mx-auto gap-6">
+          <div className="w-16 h-16 bg-success-100 rounded-full flex items-center justify-center">
+            <Check className="w-8 h-8 text-success-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-navy-800">Document processed</h2>
+
+          <div className="bg-white rounded-2xl border border-navy-200 p-6 w-full shadow-sm text-left">
+            <div className="flex items-center gap-3 mb-4">
+              <FileText className="w-6 h-6 text-primary-500" />
+              <div>
+                <p className="text-lg font-semibold text-navy-800">{currentDoc.name}</p>
+                <p className="text-base text-navy-500">{currentDoc.date}</p>
+              </div>
+            </div>
+
+            {currentDoc.medicines.length > 0 && (
+              <div className="mt-4">
+                <p className="text-base font-medium text-navy-600 mb-2">Medicines detected:</p>
+                <ul className="space-y-1">
+                  {currentDoc.medicines.map((med, i) => (
+                    <li key={i} className="text-navy-700 text-base">
+                      • {med.name} {med.dosage && `- ${med.dosage}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {currentDoc.diagnoses && currentDoc.diagnoses.length > 0 && (
+              <div className="mt-4">
+                <p className="text-base font-medium text-navy-600 mb-2">Detected:</p>
+                <ul className="space-y-1">
+                  {currentDoc.diagnoses.map((d, i) => (
+                    <li key={i} className="text-navy-700 text-base">• {d}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3 w-full">
+            <button
+              onClick={() => setView('upload')}
+              className="flex-1 border-2 border-navy-200 text-navy-700 text-lg font-semibold py-4 rounded-2xl hover:bg-navy-50 min-h-[64px]"
+            >
+              Add another
+            </button>
+            <button
+              onClick={handleContinue}
+              className="flex-1 bg-primary-500 hover:bg-primary-600 text-white text-lg font-semibold py-4 rounded-2xl min-h-[64px]"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </KioskLayout>
+    );
+  }
+
+  return (
+    <KioskLayout>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+      <div className="flex flex-col items-center text-center max-w-lg mx-auto gap-8">
+        <h2 className="text-3xl font-bold text-navy-900">
+          Do you have previous medical reports?
+        </h2>
+        <p className="text-lg text-navy-500">
+          You can upload prescriptions, lab reports or discharge summaries.
+        </p>
+
+        <div className="flex flex-col gap-4 w-full">
+          <button
+            onClick={() => handleUpload(true)}
+            className="w-full bg-white border-2 border-navy-200 hover:border-primary-500 hover:bg-primary-50 text-navy-800 text-xl font-semibold py-5 px-8 rounded-2xl transition-all min-h-[72px] flex items-center justify-center gap-3"
+          >
+            <Camera className="w-6 h-6 text-primary-500" />
+            Scan Document
+          </button>
+
+          <button
+            onClick={() => handleUpload(false)}
+            className="w-full bg-white border-2 border-navy-200 hover:border-primary-500 hover:bg-primary-50 text-navy-800 text-xl font-semibold py-5 px-8 rounded-2xl transition-all min-h-[72px] flex items-center justify-center gap-3"
+          >
+            <Upload className="w-6 h-6 text-primary-500" />
+            Upload Document
+          </button>
+
+          <button
+            onClick={handleContinue}
+            className="w-full bg-navy-200 hover:bg-navy-300 text-navy-700 text-xl font-semibold py-5 px-8 rounded-2xl transition-all min-h-[72px]"
+          >
+            Skip
+          </button>
+        </div>
+      </div>
+    </KioskLayout>
+  );
+}
