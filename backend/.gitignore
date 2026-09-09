@@ -1,25 +1,35 @@
-# dependencies
-node_modules/
+# Dependencies
+/node_modules
 
-# build output
-dist/
-build/
-
-# persistence - contains patient data (PII), never commit
-data/
-*.db.json
-
-# env - never commit secrets
+# Environment variables
 .env
-.env.local
-.env.*.local
 
-# logs
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs
 *.log
 npm-debug.log*
 
-# OS / editor
+# Build output
+dist
+build
+
+# OS generated files
 .DS_Store
 Thumbs.db
-.idea/
-.vscode/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.swp
+*.swo
+
+# Package lock files (optional - some prefer to commit these)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

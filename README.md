@@ -1,80 +1,102 @@
-# MediCase AI (MediKiosk)
+# MediKiosk 🏥
 
-AI-powered clinical case-taking & medical history management for hospitals.
+AI-Powered Clinical Token Generation System
 
-> **Patient speaks → AI structures → Doctor decides.**
+## Overview
 
-An end-to-end healthcare intake product: a patient **kiosk** (voice/text intake +
-document OCR), an **AI clinical summary engine** with red-flag triage, and a
-**doctor dashboard** to review and confirm finalized clinical records.
+MediKiosk is a smart medical kiosk system that helps patients get consultation tokens by describing their symptoms. The AI automatically analyzes the symptoms and recommends the appropriate specialist doctor.
 
-## Repo layout
+## Features
 
-```
-mediKiosk/
-├── backend/    Express + TypeScript REST API (auth, sessions, LLM/OCR, FHIR)
-├── frontend/   React + TypeScript + Vite SPA (kiosk + doctor dashboard)
-└── package.json  Root orchestrator (unified scripts)
-```
+### Patient Portal
+- Simple form to enter personal details
+- Describe symptoms in natural language
+- AI analyzes symptoms and recommends specialist
+- Generates token with estimated wait time
+- Shows priority level (Normal/Urgent)
 
-## Quick start
+### Doctor Dashboard
+- Secure login for doctors
+- View patient queue in real-time
+- See AI analysis of patient symptoms
+- Update token status (Start Consultation/Complete)
+- Priority queue for urgent cases
+
+## Tech Stack
+
+- **Frontend:** React + Vite
+- **Backend:** Node.js + Express
+- **Database:** SQLite
+- **AI:** Keyword-based symptom analysis
+
+## Quick Start
+
+### 1. Start Backend
 
 ```bash
-# 1. Install dependencies for both packages
-npm run install:all
+cd medikiosk/backend
+npm install
+npm start
+```
 
-# 2. Configure backend env (optional; sensible defaults provided)
-cp backend/.env.example backend/.env
+Backend runs on `http://localhost:5000`
 
-# 3. Run backend + frontend together (hot reload)
+### 2. Start Frontend
+
+```bash
+cd medikiosk/frontend
+npm install
 npm run dev
 ```
 
-Open:
-- Kiosk / patient flow → `http://localhost:5173/welcome`
-- Doctor login → `http://localhost:5173/doctor/login`
+Frontend runs on `http://localhost:5173`
 
-**Doctor demo credentials:** `admin` / `doctor123` (override via
-`DOCTOR_USERNAME` / `DOCTOR_PASSWORD` env).
+## Demo Credentials
 
-## Unified commands (from repo root)
+**Doctor Login:**
+- Email: `rajesh@medikiosk.com`
+- Password: `doctor123`
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Runs backend (:4000) + frontend (:5173) together |
-| `npm run build` | Type-checks + builds both packages |
-| `npm test` | Runs backend API tests (Vitest) |
-| `npm run lint` | Lints the frontend (oxlint) |
+## API Endpoints
 
-## Key features
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/tokens/generate` | Generate new token |
+| GET | `/api/tokens/:id` | Get token details |
+| POST | `/api/doctors/login` | Doctor login |
+| POST | `/api/doctors/register` | Register new doctor |
+| GET | `/api/doctor/tokens` | Get doctor's queue |
+| PUT | `/api/doctor/tokens/:id` | Update token status |
 
-- **Patient kiosk** — consent, ABHA/Aadhaar identity extraction, SOCRATES-style
-  adaptive interview, document upload (OCR), AI-structured history.
-- **Red-flag triage** — deterministic rule engine flags urgent symptoms for
-  priority review (never a diagnosis).
-- **AI clinical draft** — LLM-generated structured draft (CC → HPI → PMH →
-  meds → allergies) when `LLM_API_KEY` is set; rule-based fallback otherwise.
-- **Doctor dashboard** — stats, today's cases, priority cases, timeline,
-  documents, and doctor notes.
-- **Auth** — JWT login gates the doctor workspace.
-- **Persistence** — data survives restarts via a JSON file store
-  (`backend/data/`), automatically written on every change.
+## Project Structure
 
-## Real vs. simulated subsystems
+```
+medikiosk/
+├── backend/
+│   ├── index.js          # Express server & API routes
+│   ├── package.json
+│   └── .env
+└── frontend/
+    ├── src/
+    │   ├── components/
+    │   │   ├── PatientPortal.jsx
+    │   │   ├── TokenResult.jsx
+    │   │   ├── DoctorLogin.jsx
+    │   │   └── DoctorDashboard.jsx
+    │   ├── App.jsx
+    │   └── App.css
+    └── package.json
+```
 
-The dashboard shows honest status badges for each:
+## How It Works
 
-| Subsystem | Live when | Fallback |
-| --- | --- | --- |
-| LLM / AI | `LLM_API_KEY` set | Rule-based engine |
-| OCR | `OCR_API_KEY` + `OCR_ENDPOINT` set | Simulated results |
-| FHIR / ABDM | `FHIR_BASE_URL` + prod env | Mock push (logs) |
-| Data store | Always (JSON file) | — |
+1. **Patient enters symptoms** → e.g., "chest pain and shortness of breath"
+2. **AI analyzes keywords** → Matches against medical specializations
+3. **System recommends specialist** → e.g., Cardiologist
+4. **Token generated** → With queue position and estimated wait
+5. **Doctor sees patient** → In priority-sorted queue
+6. **Doctor updates status** → Start/Complete consultation
 
-Check `backend/.env.example` for all options.
+## License
 
-## Documentation
-
-- `backend/MediKiosk — Backend Development Specification.md`
-- `frontend/MediKiosk — Frontend Development Specification.md`
-- `medikiosk-des.md` (product overview)
+MIT
