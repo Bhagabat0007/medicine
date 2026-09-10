@@ -1,3 +1,4 @@
+const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
@@ -47,10 +48,22 @@ const imageUpload = multer({
   }
 });
 
-const openai = new OpenAI({ 
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: 'https://api.groq.com/openai/v1'
-});
+// Lazy & safe OpenAI initialization to avoid crash when credentials are not configured
+function getOpenAIClient() {
+  const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '' || apiKey.startsWith('your_groq_api_key')) {
+    return null;
+  }
+  try {
+    return new OpenAI({ 
+      apiKey: apiKey.trim(),
+      baseURL: process.env.GROQ_API_BASE_URL || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1'
+    });
+  } catch (err) {
+    console.error('Error initializing OpenAI client:', err.message);
+    return null;
+  }
+}
 
 // Initialize Tesseract worker
 let tesseractWorker = null;
@@ -63,6 +76,34 @@ async function getTesseractWorker() {
 
 app.use(cors());
 app.use(express.json());
+
+// Base & Health Check routes
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    name: 'MediKiosk API',
+    message: 'MediKiosk backend is running successfully',
+    version: '1.0.0'
+  });
+});
+
+app.get('/api', (req, res) => {
+  res.json({
+    status: 'ok',
+    name: 'MediKiosk API',
+    message: 'MediKiosk backend API is active',
+    version: '1.0.0'
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get(['/favicon.ico', '/favicon.png'], (req, res) => res.status(204).end());
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
@@ -98,7 +139,28 @@ function emitQueueUpdate(doctorId) {
   );
 }
 
-const db = new sqlite3.Database(pathMod.join(__dirname, 'medikiosk.db'));
+// Database setup - support serverless /tmp fallback
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
+const dbFilePath = process.env.DB_PATH || (isServerless ? pathMod.join('/tmp', 'medikiosk.db') : pathMod.join(__dirname, 'medikiosk.db'));
+
+if (isServerless && !fs.existsSync(dbFilePath)) {
+  const localDb = pathMod.join(__dirname, 'medikiosk.db');
+  if (fs.existsSync(localDb)) {
+    try {
+      fs.copyFileSync(localDb, dbFilePath);
+    } catch (e) {
+      console.warn('Could not copy initial db template to /tmp:', e.message);
+    }
+  }
+}
+
+const db = new sqlite3.Database(dbFilePath, (err) => {
+  if (err) {
+    console.error('SQLite connection error for path', dbFilePath, ':', err.message);
+  } else {
+    console.log('SQLite connected at:', dbFilePath);
+  }
+});
 
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS doctors (
@@ -195,13 +257,16 @@ app.post('/api/voice/transcribe', audioUpload.single('audio'), async (req, res) 
     return res.status(400).json({ error: 'No audio file provided' });
   }
 
-  try {
-    if (!process.env.GROQ_API_KEY) {
-      return res.status(503).json({ error: 'Speech-to-text service not configured. Set GROQ_API_KEY in .env' });
-    }
+  const client = getOpenAIClient();
+  if (!client) {
+    return res.status(503).json({ 
+      error: 'Speech-to-text service not configured. Set GROQ_API_KEY in environment variables.' 
+    });
+  }
 
+  try {
     const audioFile = new File([req.file.buffer], 'audio.webm', { type: req.file.mimetype });
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await client.audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-large-v3',
       language: 'en',
@@ -432,7 +497,13 @@ db.run(`ALTER TABLE tokens ADD COLUMN prescription TEXT`, (err) => {
   if (err && !err.message.includes('duplicate column')) console.log('prescription column exists or error:', err.message);
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`MediKiosk Backend running on http://localhost:${PORT}`);
-  console.log(`Socket.io server ready`);
-});
+if (!process.env.VERCEL || process.env.VERCEL_DEV === '1') {
+  httpServer.listen(PORT, () => {
+    console.log(`MediKiosk Backend running on http://localhost:${PORT}`);
+    console.log(`Socket.io server ready`);
+  });
+}
+
+module.exports = app;
+module.exports.app = app;
+module.exports.httpServer = httpServer;

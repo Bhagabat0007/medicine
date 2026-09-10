@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-
-const API_URL = '/api';
+import { API_URL } from '../config/api';
 
 function DoctorLogin() {
   const { t } = useTranslation();

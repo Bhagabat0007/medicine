@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
+import { SOCKET_URL } from '../config/api';
 
 function KioskView() {
   const { t } = useTranslation();
@@ -10,7 +11,7 @@ function KioskView() {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const socket = io(window.location.origin, {
+    const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling']
     });
 

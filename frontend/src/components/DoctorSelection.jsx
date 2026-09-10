@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-
-const API_URL = '/api';
+import { API_URL } from '../config/api';
 
 const SPECIALIZATION_ICONS = {
   'Cardiologist': '❤️',

@@ -4,8 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import LanguageSelector from './LanguageSelector';
-
-const API_URL = '/api';
+import { API_URL } from '../config/api';
 
 // Status filter tabs
 const STATUS_FILTERS = [

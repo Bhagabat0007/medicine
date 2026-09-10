@@ -6,8 +6,7 @@ import DoctorSelection from './DoctorSelection';
 import MedicalSheet from './MedicalSheet';
 import VoiceRecorder from './VoiceRecorder';
 import WebSpeechRecorder from './WebSpeechRecorder';
-
-const API_URL = '/api';
+import { API_URL } from '../config/api';
 
 function PatientPortal() {
   const { t } = useTranslation();

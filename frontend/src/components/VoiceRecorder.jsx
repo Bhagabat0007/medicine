@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
-
-const API_URL = '/api';
+import { API_URL } from '../config/api';
 
 function VoiceRecorder({ onTranscribe }) {
   const { t } = useTranslation();
