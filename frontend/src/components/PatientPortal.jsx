@@ -1,22 +1,16 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import MedicalHistory from './MedicalHistory';
 import DoctorSelection from './DoctorSelection';
 import MedicalSheet from './MedicalSheet';
+import VoiceRecorder from './VoiceRecorder';
+import WebSpeechRecorder from './WebSpeechRecorder';
 
 const API_URL = '/api';
 
-const STEP_LABELS = [
-  'Personal Info',
-  'Symptoms',
-  'Follow-up',
-  'History',
-  'Analysis',
-  'Doctor',
-  'Token'
-];
-
 function PatientPortal() {
+  const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     patient_name: '',
@@ -33,9 +27,24 @@ function PatientPortal() {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [voiceMode, setVoiceMode] = useState('server'); // 'server' | 'browser'
+
+  const STEP_LABELS = [
+    t('patientPortal.steps.personalInfo'),
+    t('patientPortal.steps.symptoms'),
+    t('patientPortal.steps.followUp'),
+    t('patientPortal.steps.history'),
+    t('patientPortal.steps.analysis'),
+    t('patientPortal.steps.doctor'),
+    t('patientPortal.steps.token')
+  ];
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleVoiceTranscribe = (text) => {
+    setFormData({ ...formData, symptoms: text });
   };
 
   const handleFollowUpSelect = (questionId, value) => {
@@ -56,7 +65,7 @@ function PatientPortal() {
       setMedicalHistoryQuestions(res.data.medicalHistoryQuestions || []);
       setStep(3);
     } catch (err) {
-      setError('Failed to load questions. Please try again.');
+      setError(t('errors.questionsLoadFailed'));
     } finally {
       setLoading(false);
     }
@@ -80,7 +89,7 @@ function PatientPortal() {
       setAnalysis(res.data);
       setStep(5);
     } catch (err) {
-      setError('Analysis failed. Please try again.');
+      setError(t('errors.analysisFailed'));
     } finally {
       setLoading(false);
     }
@@ -110,7 +119,7 @@ function PatientPortal() {
       setToken(res.data.token);
       setStep(7);
     } catch (err) {
-      setError('Failed to generate token. Please try again.');
+      setError(t('errors.tokenGenerationFailed'));
     } finally {
       setLoading(false);
     }
@@ -133,8 +142,8 @@ function PatientPortal() {
   return (
     <div className="patient-portal">
       <div className="portal-header">
-        <h1>Patient Registration</h1>
-        <p>Get your consultation token in seconds</p>
+        <h1>{t('patientPortal.title')}</h1>
+        <p>{t('patientPortal.subtitle')}</p>
       </div>
 
       {/* Step Indicator */}
@@ -154,47 +163,47 @@ function PatientPortal() {
       {/* Step 1: Personal Info */}
       {step === 1 && (
         <div className="form-card">
-          <h2>Personal Information</h2>
+          <h2>{t('patientPortal.personalInfo.title')}</h2>
           <form onSubmit={(e) => { e.preventDefault(); goStep2(); }}>
             <div className="form-group">
-              <label>Full Name *</label>
+              <label>{t('patientPortal.personalInfo.fullName')} *</label>
               <input
                 type="text"
                 name="patient_name"
                 value={formData.patient_name}
                 onChange={handleChange}
-                placeholder="Enter your full name"
+                placeholder={t('patientPortal.personalInfo.fullNamePlaceholder')}
                 required
               />
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>Age</label>
+                <label>{t('patientPortal.personalInfo.age')}</label>
                 <input
                   type="number"
                   name="patient_age"
                   value={formData.patient_age}
                   onChange={handleChange}
-                  placeholder="Age"
+                  placeholder={t('patientPortal.personalInfo.agePlaceholder')}
                   min="0"
                   max="150"
                 />
               </div>
               <div className="form-group">
-                <label>Gender</label>
+                <label>{t('patientPortal.personalInfo.gender')}</label>
                 <select
                   name="patient_gender"
                   value={formData.patient_gender}
                   onChange={handleChange}
                 >
-                  <option value="">Select</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
+                  <option value="">{t('patientPortal.personalInfo.genderPlaceholder')}</option>
+                  <option value="male">{t('patientPortal.personalInfo.male')}</option>
+                  <option value="female">{t('patientPortal.personalInfo.female')}</option>
+                  <option value="other">{t('patientPortal.personalInfo.other')}</option>
                 </select>
               </div>
             </div>
-            <button type="submit" className="btn btn-primary btn-block">Continue</button>
+            <button type="submit" className="btn btn-primary btn-block">{t('patientPortal.personalInfo.continue')}</button>
           </form>
         </div>
       )}
@@ -202,26 +211,54 @@ function PatientPortal() {
       {/* Step 2: Describe Symptoms */}
       {step === 2 && (
         <div className="form-card">
-          <h2>Describe Your Symptoms</h2>
+          <h2>{t('patientPortal.symptoms.title')}</h2>
           <p className="help-text">
-            Tell us what's bothering you. Be as detailed as possible for accurate specialist recommendation.
+            {t('patientPortal.symptoms.helpText')}
           </p>
           <form onSubmit={(e) => { e.preventDefault(); goStep3(); }}>
+            <div className="voice-mode-selector">
+              <label>{t('patientPortal.symptoms.voiceInputMethod')}</label>
+              <div className="voice-mode-tabs">
+                <button
+                  type="button"
+                  className={`voice-mode-tab ${voiceMode === 'server' ? 'active' : ''}`}
+                  onClick={() => setVoiceMode('server')}
+                >
+                  {t('patientPortal.symptoms.serverMode')}
+                </button>
+                <button
+                  type="button"
+                  className={`voice-mode-tab ${voiceMode === 'browser' ? 'active' : ''}`}
+                  onClick={() => setVoiceMode('browser')}
+                >
+                  {t('patientPortal.symptoms.browserMode')}
+                </button>
+              </div>
+            </div>
+
+            {voiceMode === 'server' && (
+              <VoiceRecorder onTranscribe={handleVoiceTranscribe} />
+            )}
+
+            {voiceMode === 'browser' && (
+              <WebSpeechRecorder onTranscribe={handleVoiceTranscribe} />
+            )}
+
             <div className="form-group">
-              <label>Your Symptoms *</label>
+              <label>{t('patientPortal.symptoms.placeholder').split('Example:')[0] || t('patientPortal.symptoms.placeholder')} *</label>
               <textarea
                 name="symptoms"
                 value={formData.symptoms}
                 onChange={handleChange}
-                placeholder="Example: I have been experiencing chest pain and shortness of breath for the past 2 days. The pain is sharp and occurs when I climb stairs..."
+                placeholder={t('patientPortal.symptoms.placeholder')}
                 rows="6"
                 required
               />
             </div>
             <div className="button-group">
-              <button type="button" className="btn btn-secondary" onClick={() => setStep(1)}>Back</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setStep(1)}>{t('patientPortal.symptoms.back')}</button>
               <button type="submit" className="btn btn-primary" disabled={loading}>
-                {loading ? 'Analyzing...' : 'Continue'}
+                {loading ? t('patientPortal.symptoms.analyzing') : t('patientPortal.symptoms.continue')}
               </button>
             </div>
           </form>
@@ -231,10 +268,10 @@ function PatientPortal() {
       {/* Step 3: Follow-up Questions */}
       {step === 3 && (
         <div className="form-card">
-          <h2>Follow-up Questions</h2>
+          <h2>{t('patientPortal.followUp.title')}</h2>
           <p className="help-text">
-            Please answer these questions to help us better understand your condition.
-            ({answeredCount}/{followUpQuestions.length} answered)
+            {t('patientPortal.followUp.helpText')}
+            ({answeredCount}/{followUpQuestions.length} {t('patientPortal.followUp.answered')})
           </p>
 
           {followUpQuestions.map((q) => (
@@ -256,14 +293,14 @@ function PatientPortal() {
           ))}
 
           <div className="button-group">
-            <button type="button" className="btn btn-secondary" onClick={() => setStep(2)}>Back</button>
+            <button type="button" className="btn btn-secondary" onClick={() => setStep(2)}>{t('patientPortal.followUp.back')}</button>
             <button
               type="button"
               className="btn btn-primary"
               disabled={answeredCount < followUpQuestions.length}
               onClick={goStep4}
             >
-              Continue
+              {t('patientPortal.followUp.continue')}
             </button>
           </div>
         </div>
@@ -281,19 +318,19 @@ function PatientPortal() {
       {/* Step 5: AI Analysis Results */}
       {step === 5 && analysis && (
         <div className="form-card analysis-card">
-          <h2>AI Health Assessment</h2>
+          <h2>{t('patientPortal.analysis.title')}</h2>
           <p className="help-text">
-            This is an AI-generated prediction for doctor review. Not a final diagnosis.
+            {t('patientPortal.analysis.disclaimer')}
           </p>
 
           <div className={`urgency-banner urgency-${analysis.urgency}`}>
-            {analysis.urgency === 'urgent' && '⚠ Urgent - Immediate attention recommended'}
-            {analysis.urgency === 'moderate' && '⚡ Moderate - Priority consultation'}
-            {analysis.urgency === 'normal' && '✓ Normal - Routine consultation'}
+            {analysis.urgency === 'urgent' && t('patientPortal.analysis.urgent')}
+            {analysis.urgency === 'moderate' && t('patientPortal.analysis.moderate')}
+            {analysis.urgency === 'normal' && t('patientPortal.analysis.normal')}
           </div>
 
           <div className="predicted-conditions">
-            <h3>Possible Conditions</h3>
+            <h3>{t('patientPortal.analysis.possibleConditions')}</h3>
             {analysis.predictedConditions.map((cond, i) => (
               <div className="predicted-condition" key={i}>
                 <div className="condition-top">
@@ -312,14 +349,14 @@ function PatientPortal() {
           </div>
 
           <div className="specialist-recommendation">
-            <span className="rec-label">Recommended Specialist</span>
+            <span className="rec-label">{t('patientPortal.analysis.recommendedSpecialist')}</span>
             <span className="rec-value">{analysis.recommendedSpecialist}</span>
           </div>
 
           <div className="button-group">
-            <button type="button" className="btn btn-secondary" onClick={() => setStep(4)}>Back</button>
+            <button type="button" className="btn btn-secondary" onClick={() => setStep(4)}>{t('patientPortal.analysis.back')}</button>
             <button type="button" className="btn btn-primary" disabled={loading} onClick={goStep6}>
-              Choose Doctor
+              {t('patientPortal.analysis.chooseDoctor')}
             </button>
           </div>
         </div>

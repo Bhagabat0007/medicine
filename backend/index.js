@@ -4,16 +4,99 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pathMod = require('path');
+const multer = require('multer');
+const { OpenAI } = require('openai');
+const { createWorker } = require('tesseract.js');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 require('dotenv').config();
 const ai = require('./ai-engine');
 
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'medikiosk-secret-key-2024';
 const DEMO_DOCTOR_ID = 1;
 
+const audioUpload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['audio/webm', 'audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/ogg', 'audio/mp4'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid audio file type'), false);
+    }
+  }
+});
+
+const imageUpload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/tiff', 'image/bmp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid image file type'), false);
+    }
+  }
+});
+
+const openai = new OpenAI({ 
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1'
+});
+
+// Initialize Tesseract worker
+let tesseractWorker = null;
+async function getTesseractWorker() {
+  if (!tesseractWorker) {
+    tesseractWorker = await createWorker('eng', 1, { logger: m => console.log(m) });
+  }
+  return tesseractWorker;
+}
+
 app.use(cors());
 app.use(express.json());
+
+// Socket.io connection handling
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+  
+  socket.on('join-doctor-room', (doctorId) => {
+    socket.join(`doctor-${doctorId}`);
+    console.log(`Doctor ${doctorId} joined room`);
+  });
+  
+  socket.on('join-kiosk-room', () => {
+    socket.join('kiosk');
+    console.log('Kiosk client joined room');
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
+// Helper to emit queue updates
+function emitQueueUpdate(doctorId) {
+  db.all(
+    `SELECT * FROM tokens WHERE doctor_id = ?
+     ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'moderate' THEN 1 ELSE 2 END, created_at ASC`,
+    [doctorId],
+    (err, tokens) => {
+      if (!err && tokens) {
+        io.to(`doctor-${doctorId}`).emit('queue:updated', tokens);
+        io.to('kiosk').emit('kiosk:updated', tokens);
+      }
+    }
+  );
+}
 
 const db = new sqlite3.Database(pathMod.join(__dirname, 'medikiosk.db'));
 
@@ -106,6 +189,59 @@ app.post('/api/symptoms/analyze', (req, res) => {
   res.json(analysis);
 });
 
+// ─── NEW: Voice transcription endpoint ──────────────────────────────────────
+app.post('/api/voice/transcribe', audioUpload.single('audio'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No audio file provided' });
+  }
+
+  try {
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(503).json({ error: 'Speech-to-text service not configured. Set GROQ_API_KEY in .env' });
+    }
+
+    const audioFile = new File([req.file.buffer], 'audio.webm', { type: req.file.mimetype });
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-large-v3',
+      language: 'en',
+      response_format: 'text'
+    });
+
+    res.json({ text: transcription.trim() });
+  } catch (err) {
+    console.error('Transcription error:', err);
+    res.status(500).json({ error: 'Transcription failed. Please try again or type manually.' });
+  }
+});
+
+// ─── NEW: OCR endpoint for medical documents ─────────────────────────────────
+app.post('/api/ocr/extract', imageUpload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file provided' });
+  }
+
+  try {
+    const worker = await getTesseractWorker();
+    
+    const { data: { text } } = await worker.recognize(req.file.buffer);
+    
+    const cleanedText = text
+      .replace(/\s+/g, ' ')
+      .replace(/[^\x20-\x7E\n]/g, '')
+      .trim();
+
+    if (!cleanedText) {
+      return res.status(400).json({ error: 'No text detected in image. Please try a clearer image.' });
+    }
+
+    res.json({ text: cleanedText });
+  } catch (err) {
+    console.error('OCR error:', err);
+    res.status(500).json({ error: 'OCR processing failed. Please try again.' });
+  }
+});
+
 // ─── MODIFIED: Generate token with enriched data ────────────────────────────
 app.post('/api/tokens/generate', (req, res) => {
   const {
@@ -145,6 +281,8 @@ app.post('/api/tokens/generate', (req, res) => {
         ],
         function(err) {
           if (err) return res.status(500).json({ error: 'Failed to generate token' });
+
+          emitQueueUpdate(doctorId);
 
           res.status(201).json({
             message: 'Token generated successfully',
@@ -240,16 +378,30 @@ app.get('/api/doctor/tokens', authenticateToken, (req, res) => {
   );
 });
 
-// Doctor: Update token status
+// Doctor: Update token status (with consultation data)
 app.put('/api/doctor/tokens/:id', authenticateToken, (req, res) => {
-  const { status } = req.body;
+  const { status, clinical_notes, prescription } = req.body;
+  const updates = ['status = ?'];
+  const params = [status, req.params.id, req.doctor.id];
+  
+  if (clinical_notes !== undefined) {
+    updates.push('clinical_notes = ?');
+    params.push(clinical_notes);
+  }
+  if (prescription !== undefined) {
+    updates.push('prescription = ?');
+    params.push(JSON.stringify(prescription));
+  }
+  
   db.run(
-    'UPDATE tokens SET status = ? WHERE id = ? AND doctor_id = ?',
-    [status, req.params.id, req.doctor.id],
+    `UPDATE tokens SET ${updates.join(', ')} WHERE id = ? AND doctor_id = ?`,
+    params,
     function(err) {
       if (err) return res.status(500).json({ error: 'Failed to update token' });
       if (this.changes === 0) return res.status(404).json({ error: 'Token not found' });
-      res.json({ message: 'Token status updated' });
+      
+      emitQueueUpdate(req.doctor.id);
+      res.json({ message: 'Token updated successfully' });
     }
   );
 });
@@ -272,6 +424,15 @@ app.get('/api/stats', (req, res) => {
   );
 });
 
-app.listen(PORT, () => {
+// Migration: Add clinical_notes and prescription columns if not exist
+db.run(`ALTER TABLE tokens ADD COLUMN clinical_notes TEXT`, (err) => {
+  if (err && !err.message.includes('duplicate column')) console.log('clinical_notes column exists or error:', err.message);
+});
+db.run(`ALTER TABLE tokens ADD COLUMN prescription TEXT`, (err) => {
+  if (err && !err.message.includes('duplicate column')) console.log('prescription column exists or error:', err.message);
+});
+
+httpServer.listen(PORT, () => {
   console.log(`MediKiosk Backend running on http://localhost:${PORT}`);
+  console.log(`Socket.io server ready`);
 });

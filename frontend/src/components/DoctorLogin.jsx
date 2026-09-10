@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const API_URL = '/api';
 
 function DoctorLogin() {
+  const { t } = useTranslation();
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     email: '',
@@ -54,10 +56,10 @@ function DoctorLogin() {
         await axios.post(`${API_URL}/doctors/register`, formData);
         setIsLogin(true);
         setError('');
-        alert('Registration successful! Please login.');
+        alert(t('doctorRegister.registrationSuccess') || 'Registration successful! Please login.');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'An error occurred');
+      setError(err.response?.data?.error || t('common.errorOccurred') || 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -67,15 +69,15 @@ function DoctorLogin() {
     <div className="doctor-login">
       <div className="login-card">
         <div className="login-header">
-          <h1>{isLogin ? 'Doctor Login' : 'Doctor Registration'}</h1>
-          <p>{isLogin ? 'Access your token dashboard' : 'Create your account'}</p>
+          <h1>{isLogin ? t('doctorLogin.title') : t('doctorRegister.title')}</h1>
+          <p>{isLogin ? t('doctorLogin.subtitle') : t('doctorRegister.subtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit}>
           {!isLogin && (
             <>
               <div className="form-group">
-                <label>Full Name *</label>
+                <label>{t('doctorRegister.name')} *</label>
                 <input
                   type="text"
                   name="name"
@@ -86,14 +88,14 @@ function DoctorLogin() {
                 />
               </div>
               <div className="form-group">
-                <label>Specialization *</label>
+                <label>{t('doctorRegister.specialization')} *</label>
                 <select
                   name="specialization"
                   value={formData.specialization}
                   onChange={handleChange}
                   required
                 >
-                  <option value="">Select Specialization</option>
+                  <option value="">{t('doctorRegister.specializationPlaceholder') || 'Select Specialization'}</option>
                   {specializations.map(spec => (
                     <option key={spec} value={spec}>{spec}</option>
                   ))}
@@ -103,7 +105,7 @@ function DoctorLogin() {
           )}
 
           <div className="form-group">
-            <label>Email *</label>
+            <label>{t('doctorLogin.email')} *</label>
             <input
               type="email"
               name="email"
@@ -115,7 +117,7 @@ function DoctorLogin() {
           </div>
 
           <div className="form-group">
-            <label>Password *</label>
+            <label>{t('doctorLogin.password')} *</label>
             <input
               type="password"
               name="password"
@@ -129,28 +131,28 @@ function DoctorLogin() {
           {error && <div className="error-message">{error}</div>}
 
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
-            {loading ? 'Please wait...' : (isLogin ? 'Login' : 'Register')}
+            {loading ? t('common.pleaseWait') : (isLogin ? t('doctorLogin.login') : t('doctorRegister.register'))}
           </button>
         </form>
 
         <div className="toggle-form">
           <p>
-            {isLogin ? "Don't have an account?" : 'Already have an account?'}
+            {isLogin ? t('doctorLogin.noAccount') : t('doctorLogin.hasAccount')}
             <button
               type="button"
               className="link-btn"
               onClick={() => { setIsLogin(!isLogin); setError(''); }}
             >
-              {isLogin ? 'Register here' : 'Login here'}
+              {isLogin ? t('doctorLogin.registerHere') : t('doctorLogin.loginHere')}
             </button>
           </p>
         </div>
 
         {isLogin && (
           <div className="demo-credentials">
-            <p><strong>Demo Credentials:</strong></p>
-            <p>Email: rajesh@medikiosk.com</p>
-            <p>Password: doctor123</p>
+            <p><strong>{t('doctorLogin.demoCredentials')}:</strong></p>
+            <p>{t('doctorLogin.demoEmail')}</p>
+            <p>{t('doctorLogin.demoPassword')}</p>
           </div>
         )}
       </div>

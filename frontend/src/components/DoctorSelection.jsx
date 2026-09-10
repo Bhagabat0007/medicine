@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 
 const API_URL = '/api';
@@ -20,6 +21,7 @@ const SPECIALIZATION_ICONS = {
 };
 
 function DoctorSelection({ recommendedSpecialist, onSelect, onBack }) {
+  const { t } = useTranslation();
   const [doctors, setDoctors] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -46,17 +48,17 @@ function DoctorSelection({ recommendedSpecialist, onSelect, onBack }) {
   if (loading) {
     return (
       <div className="form-card">
-        <h2>Loading doctors...</h2>
+        <h2>{t('common.loading')}</h2>
       </div>
     );
   }
 
   return (
     <div className="form-card">
-      <h2>Choose Your Doctor</h2>
+      <h2>{t('patientPortal.doctorSelection.title')}</h2>
       <p className="help-text">
-        Based on your symptoms, we recommend a <strong>{recommendedSpecialist}</strong>.
-        Select a doctor to proceed.
+        {t('patientPortal.doctorSelection.subtitle')}
+        <strong>{recommendedSpecialist}</strong>.
       </p>
 
       <div className="doctor-grid">
@@ -69,13 +71,13 @@ function DoctorSelection({ recommendedSpecialist, onSelect, onBack }) {
               className={`doctor-card ${selectedId === doc.id ? 'selected' : ''} ${isRecommended ? 'recommended' : ''}`}
               onClick={() => handleSelect(doc)}
             >
-              {isRecommended && <div className="recommended-badge">Recommended</div>}
+              {isRecommended && <div className="recommended-badge">{t('patientPortal.doctorSelection.recommended')}</div>}
               <div className="doctor-avatar">{icon}</div>
               <div className="doctor-name">{doc.name}</div>
               <div className="doctor-specialization">{doc.specialization}</div>
               <div className="doctor-status">
                 <span className="status-dot available"></span>
-                Available
+                {t('patientPortal.doctorSelection.available')}
               </div>
             </div>
           );
@@ -83,14 +85,14 @@ function DoctorSelection({ recommendedSpecialist, onSelect, onBack }) {
       </div>
 
       <div className="button-group">
-        <button type="button" className="btn btn-secondary" onClick={onBack}>Back</button>
+        <button type="button" className="btn btn-secondary" onClick={onBack}>{t('patientPortal.doctorSelection.back')}</button>
         <button
           type="button"
           className="btn btn-primary"
           disabled={!selectedId}
           onClick={handleContinue}
         >
-          Confirm Selection
+          {t('common.save')}
         </button>
       </div>
     </div>
