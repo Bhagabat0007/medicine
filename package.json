@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "cd frontend && npm install && npm run build",
+    "build": "npm --prefix frontend run build",
     "start": "node backend/index.js",
     "dev:backend": "node backend/index.js",
-    "dev:frontend": "cd frontend && npm run dev"
+    "dev:frontend": "npm --prefix frontend run dev"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
